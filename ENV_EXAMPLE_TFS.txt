@@ -1,0 +1,73 @@
+# Example .env configuration for RealPage TFS
+# Copy these values to your .env file and replace with your actual credentials
+
+# ============================================================================
+# TFS/Azure DevOps Server Configuration (REQUIRED FOR TESTING)
+# ============================================================================
+AZURE_DEVOPS_SERVER_URL=https://tfs.realpage.com/tfs
+AZURE_DEVOPS_COLLECTION=Realpage
+AZURE_DEVOPS_PROJECT=Change_Management
+AZURE_DEVOPS_PAT=your_personal_access_token_here
+AZURE_DEVOPS_ORG=Realpage
+
+# ============================================================================
+# Google Cloud Configuration (REQUIRED FOR ADK AGENTS)
+# ============================================================================
+GOOGLE_API_KEY=your_gemini_api_key_here
+# Optional: For production use
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+# GOOGLE_CLOUD_PROJECT=your-gcp-project-id
+
+# ============================================================================
+# Microsoft Teams Bot Configuration (OPTIONAL - for Teams integration)
+# ============================================================================
+MICROSOFT_APP_ID=your_bot_app_id_here
+MICROSOFT_APP_PASSWORD=your_bot_app_password_here
+MICROSOFT_APP_TYPE=MultiTenant
+
+# ============================================================================
+# Microsoft Graph API Configuration (OPTIONAL - for calendar integration)
+# ============================================================================
+AZURE_CLIENT_ID=your_azure_app_client_id
+AZURE_CLIENT_SECRET=your_azure_client_secret
+AZURE_TENANT_ID=your_azure_tenant_id
+
+# ============================================================================
+# Storage Configuration (OPTIONAL - for production deployment)
+# ============================================================================
+AZURE_STORAGE_CONNECTION_STRING=your_storage_connection_string
+COSMOS_DB_ENDPOINT=your_cosmos_db_endpoint
+COSMOS_DB_KEY=your_cosmos_db_key
+COSMOS_DB_DATABASE=change_management
+COSMOS_DB_CONTAINER=conversation_references
+
+# ============================================================================
+# Bot Server Configuration
+# ============================================================================
+BOT_PORT=3978
+BOT_HOST=0.0.0.0
+
+# ============================================================================
+# ADK Configuration
+# ============================================================================
+ADK_MODEL=gemini-1.5-flash
+ADK_TEMPERATURE=0.7
+
+# ============================================================================
+# Approval Workflow Configuration
+# ============================================================================
+APPROVAL_TIMEOUT_MINUTES=30
+ESCALATION_MANAGER_EMAIL=manager@realpage.com
+
+# ============================================================================
+# Logging
+# ============================================================================
+LOG_LEVEL=INFO
+
+# ============================================================================
+# PRIORITY SETUP ORDER:
+# ============================================================================
+# 1. TFS Configuration (lines 5-9) - Test with: python test_azure_devops_connection.py
+# 2. Google API Key (line 15) - Test with: adk web src/agents/orchestrator_agent.py
+# 3. Teams Bot (optional, lines 23-25) - For Teams integration
+# 4. Microsoft Graph (optional, lines 31-33) - For calendar features
