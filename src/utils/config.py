@@ -48,20 +48,16 @@ class Config:
     
     AZURE_DEVOPS_BASE_URL: str = ""  # Will be set dynamically
 
-    # Storage Configuration
-    AZURE_STORAGE_CONNECTION_STRING: str = os.getenv("AZURE_STORAGE_CONNECTION_STRING", "")
-    COSMOS_DB_ENDPOINT: str = os.getenv("COSMOS_DB_ENDPOINT", "")
-    COSMOS_DB_KEY: str = os.getenv("COSMOS_DB_KEY", "")
-    COSMOS_DB_DATABASE: str = os.getenv("COSMOS_DB_DATABASE", "change_management")
-    COSMOS_DB_CONTAINER: str = os.getenv("COSMOS_DB_CONTAINER", "conversation_references")
+    # SQL Server Database Configuration
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "mssql+pyodbc://localhost/cab_agent?driver=ODBC+Driver+17+for+SQL+Server&trusted_connection=yes")
 
     # Bot Server Configuration
     BOT_PORT: int = int(os.getenv("BOT_PORT", "3978"))
     BOT_HOST: str = os.getenv("BOT_HOST", "0.0.0.0")
 
-    # ADK Configuration
-    ADK_MODEL: str = os.getenv("ADK_MODEL", "gpt-4o")
-    ADK_TEMPERATURE: float = float(os.getenv("ADK_TEMPERATURE", "0.7"))
+    # OpenAI Model Configuration
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o")
+    OPENAI_TEMPERATURE: float = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
 
     # Approval Workflow Configuration
     APPROVAL_TIMEOUT_MINUTES: int = int(os.getenv("APPROVAL_TIMEOUT_MINUTES", "30"))

@@ -204,7 +204,7 @@ def setup_openai():
         return None, None
     
     client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
-    model = config.ADK_MODEL
+    model = config.OPENAI_MODEL
     
     # Define tools for function calling (OpenAI format)
     tools = [

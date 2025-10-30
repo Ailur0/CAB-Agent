@@ -1,29 +1,25 @@
-# Google Generative AI (Gemini API)
-google-generativeai>=0.3.0
+# OpenAI API (for AI/LLM)
+openai>=1.0.0
 
 # Microsoft Teams Bot Framework
 botbuilder-core>=4.15.0
 botbuilder-schema>=4.15.0
-teams-ai>=1.0.0
 
 # Web framework (using AIOHTTP for async support)
 aiohttp>=3.9.0
 aiohttp-cors>=0.7.0
 
-# Microsoft Authentication Library
+# Microsoft Authentication Library (for Graph API)
 msal>=1.24.0
-
-# Azure SDK packages
 azure-identity>=1.14.0
-azure-keyvault-secrets>=4.7.0
-azure-storage-blob>=12.19.0
-azure-cosmos>=4.5.0
 
-# Google Cloud packages
-google-cloud-secret-manager>=2.16.0
-google-cloud-storage>=2.10.0
-google-cloud-scheduler>=2.11.0
-google-auth>=2.23.0
+# SQL Server Database
+pyodbc>=5.0.1
+sqlalchemy>=2.0.23
+alembic>=1.13.0
+
+# Background Jobs (for polling/sync)
+apscheduler>=3.10.4
 
 # HTTP requests
 requests>=2.31.0

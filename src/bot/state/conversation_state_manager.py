@@ -201,37 +201,71 @@ class ConversationStateManager:
 
 class ConversationReferenceManager:
     """
-    Manages conversation references for proactive messaging.
-    
-    In production, this should use Cosmos DB with TTL.
-    For now, using in-memory storage for development.
+    Manages conversation references for proactive messaging using SQL Server database.
     """
 
     def __init__(self):
         """Initialize the conversation reference manager."""
-        self._reference_store: Dict[str, Dict[str, Any]] = {}
-        logger.info("ConversationReferenceManager initialized")
+        logger.info("ConversationReferenceManager initialized (using database)")
 
     def save_reference(
         self, user_id: str, conversation_reference: Dict[str, Any]
     ) -> None:
         """
-        Save a conversation reference for a user.
+        Save a conversation reference for a user to database.
 
         Args:
             user_id: Unique user identifier.
             conversation_reference: Bot Framework conversation reference.
         """
-        self._reference_store[user_id] = {
-            "reference": conversation_reference,
-            "saved_at": datetime.utcnow().isoformat(),
-        }
-
-        logger.info("Saved conversation reference", user_id=user_id)
+        try:
+            from src.database import get_session, UserConversationReference
+            import json
+            
+            session = get_session()
+            
+            # Extract user info from conversation reference
+            user_info = conversation_reference.get("user", {})
+            email = user_info.get("email") or user_info.get("userPrincipalName")
+            aad_object_id = user_info.get("aadObjectId")
+            name = user_info.get("name")
+            
+            # Check if reference exists
+            existing = session.query(UserConversationReference).filter_by(user_id=user_id).first()
+            
+            if existing:
+                # Update existing
+                existing.conversation_reference = json.dumps(conversation_reference)
+                existing.updated_at = datetime.utcnow()
+                existing.last_interaction_at = datetime.utcnow()
+                if email:
+                    existing.email = email
+                if aad_object_id:
+                    existing.aad_object_id = aad_object_id
+                if name:
+                    existing.name = name
+            else:
+                # Create new
+                new_ref = UserConversationReference(
+                    user_id=user_id,
+                    email=email,
+                    aad_object_id=aad_object_id,
+                    name=name,
+                    conversation_reference=json.dumps(conversation_reference),
+                )
+                session.add(new_ref)
+            
+            session.commit()
+            session.close()
+            
+            logger.info("Saved conversation reference to database", user_id=user_id, email=email)
+            
+        except Exception as e:
+            logger.error("Failed to save conversation reference", error=str(e))
 
     def get_reference(self, user_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get the conversation reference for a user.
+        Get the conversation reference for a user from database.
 
         Args:
             user_id: Unique user identifier.
@@ -239,18 +273,28 @@ class ConversationReferenceManager:
         Returns:
             Conversation reference dictionary or None if not found.
         """
-        stored = self._reference_store.get(user_id)
-
-        if stored:
-            logger.info("Retrieved conversation reference", user_id=user_id)
-            return stored["reference"]
-
-        logger.warning("Conversation reference not found", user_id=user_id)
-        return None
+        try:
+            from src.database import get_session, UserConversationReference
+            import json
+            
+            session = get_session()
+            user_ref = session.query(UserConversationReference).filter_by(user_id=user_id).first()
+            session.close()
+            
+            if user_ref:
+                logger.info("Retrieved conversation reference from database", user_id=user_id)
+                return json.loads(user_ref.conversation_reference)
+            
+            logger.warning("Conversation reference not found in database", user_id=user_id)
+            return None
+            
+        except Exception as e:
+            logger.error("Failed to get conversation reference", error=str(e))
+            return None
 
     def delete_reference(self, user_id: str) -> bool:
         """
-        Delete a conversation reference.
+        Delete a conversation reference from database.
 
         Args:
             user_id: Unique user identifier.
@@ -258,16 +302,29 @@ class ConversationReferenceManager:
         Returns:
             True if deleted, False if not found.
         """
-        if user_id in self._reference_store:
-            del self._reference_store[user_id]
-            logger.info("Deleted conversation reference", user_id=user_id)
-            return True
-
-        return False
+        try:
+            from src.database import get_session, UserConversationReference
+            
+            session = get_session()
+            user_ref = session.query(UserConversationReference).filter_by(user_id=user_id).first()
+            
+            if user_ref:
+                session.delete(user_ref)
+                session.commit()
+                session.close()
+                logger.info("Deleted conversation reference from database", user_id=user_id)
+                return True
+            
+            session.close()
+            return False
+            
+        except Exception as e:
+            logger.error("Failed to delete conversation reference", error=str(e))
+            return False
 
     def cleanup_old_references(self, max_age_days: int = 30) -> int:
         """
-        Clean up conversation references older than specified days.
+        Clean up conversation references older than specified days from database.
 
         Args:
             max_age_days: Maximum age in days before cleanup.
@@ -275,19 +332,30 @@ class ConversationReferenceManager:
         Returns:
             Number of references cleaned up.
         """
-        cutoff_time = datetime.utcnow() - timedelta(days=max_age_days)
-        users_to_remove = []
-
-        for user_id, stored in self._reference_store.items():
-            saved_at = datetime.fromisoformat(stored["saved_at"])
-            if saved_at < cutoff_time:
-                users_to_remove.append(user_id)
-
-        for user_id in users_to_remove:
-            del self._reference_store[user_id]
-
-        logger.info("Cleaned up old references", count=len(users_to_remove))
-        return len(users_to_remove)
+        try:
+            from src.database import get_session, UserConversationReference
+            
+            cutoff_time = datetime.utcnow() - timedelta(days=max_age_days)
+            
+            session = get_session()
+            old_refs = session.query(UserConversationReference).filter(
+                UserConversationReference.last_interaction_at < cutoff_time
+            ).all()
+            
+            count = len(old_refs)
+            
+            for ref in old_refs:
+                session.delete(ref)
+            
+            session.commit()
+            session.close()
+            
+            logger.info("Cleaned up old references from database", count=count)
+            return count
+            
+        except Exception as e:
+            logger.error("Failed to cleanup old references", error=str(e))
+            return 0
 
 
 # Singleton instances
