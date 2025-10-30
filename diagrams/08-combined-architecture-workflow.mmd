@@ -1,0 +1,60 @@
+graph TB
+    subgraph "External Systems"
+        ADO[Azure DevOps<br/>TFS API]
+        Teams[Microsoft Teams]
+    end
+
+    subgraph "CAB Agent - Complete System"
+        subgraph "1. Database Layer"
+            DB[(SQL Server)]
+            T1[change_requests]
+            T2[cr_state_history]
+            T3[user_conversation_references]
+            T4[cr_notifications_sent]
+        end
+
+        subgraph "2. Background Services"
+            POLL[Polling Service<br/>⏰ Every 5 min]
+            EVENT[Event Processor<br/>🔍 Change Detection]
+        end
+
+        subgraph "3. Bot & AI"
+            BOT[Teams Bot<br/>💬 AIOHTTP]
+            AI[OpenAI API<br/>🤖 gpt-4o]
+            TOOLS[DevOps Tools<br/>🔧 CR Operations]
+        end
+
+        subgraph "4. Workflows"
+            W1[Reactive:<br/>User Queries]
+            W2[Proactive:<br/>Notifications]
+        end
+    end
+
+    %% Data Flow
+    ADO -->|1. Fetch CRs| POLL
+    POLL -->|2. Store| DB
+    POLL -->|3. Detect Changes| EVENT
+    EVENT -->|4. Query| DB
+    EVENT -->|5. Trigger| W2
+    
+    Teams -->|A. User Message| BOT
+    BOT -->|B. Save Ref| DB
+    BOT -->|C. Process| AI
+    AI -->|D. Function Call| TOOLS
+    TOOLS -->|E. Query| DB
+    TOOLS -->|F. Fetch if needed| ADO
+    BOT -->|G. Response| Teams
+    
+    W2 -->|Proactive Message| BOT
+    BOT -->|Notification| Teams
+
+    %% Styling
+    style DB fill:#326CE5,stroke:#fff,stroke-width:3px,color:#fff
+    style AI fill:#10A37F,stroke:#fff,stroke-width:3px,color:#fff
+    style BOT fill:#5B5FC7,stroke:#fff,stroke-width:3px,color:#fff
+    style POLL fill:#FF6B6B,stroke:#fff,stroke-width:3px,color:#fff
+    style EVENT fill:#FFA500,stroke:#fff,stroke-width:3px,color:#fff
+    style W1 fill:#87CEEB,stroke:#333,stroke-width:2px
+    style W2 fill:#FF69B4,stroke:#333,stroke-width:2px
+    style ADO fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff
+    style Teams fill:#5B5FC7,stroke:#fff,stroke-width:2px,color:#fff

@@ -1,0 +1,47 @@
+graph LR
+    subgraph "Phase 1: Initial Setup"
+        A1[Install SQL Server] --> A2[Create Database]
+        A2 --> A3[Run setup_database.py]
+        A3 --> A4[Tables Created]
+    end
+
+    subgraph "Phase 2: Data Population"
+        B1[Run sync_azure_devops.py] --> B2[Query Azure DevOps]
+        B2 --> B3[Fetch all CRs]
+        B3 --> B4[Populate Database]
+        B4 --> B5[100+ CRs Synced]
+    end
+
+    subgraph "Phase 3: Background Polling"
+        C1[Start Polling Service] --> C2[Every 5 minutes]
+        C2 --> C3[Sync CRs]
+        C3 --> C4[Detect Changes]
+        C4 --> C5[Log to History]
+        C5 --> C2
+    end
+
+    subgraph "Phase 4: Teams Bot"
+        D1[Configure Azure Bot] --> D2[Start Bot Server]
+        D2 --> D3[User Messages Bot]
+        D3 --> D4[Store Conversation Ref]
+        D4 --> D5[Bot Ready for Proactive]
+    end
+
+    subgraph "Phase 5: Proactive Notifications"
+        E1[Change Detected] --> E2[Check Event Rules]
+        E2 --> E3[Match: Pending CAB → Approved]
+        E3 --> E4[Get Creator Email]
+        E4 --> E5[Lookup Conversation Ref]
+        E5 --> E6[Send Teams Notification]
+    end
+
+    A4 --> B1
+    B5 --> C1
+    C5 --> E1
+    D5 --> E5
+
+    style A4 fill:#90EE90
+    style B5 fill:#90EE90
+    style C5 fill:#FFD700
+    style D5 fill:#87CEEB
+    style E6 fill:#FF69B4

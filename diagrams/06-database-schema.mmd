@@ -1,0 +1,54 @@
+erDiagram
+    CHANGE_REQUESTS ||--o{ CR_STATE_HISTORY : tracks
+    CHANGE_REQUESTS ||--o{ CR_NOTIFICATIONS_SENT : notifies
+    USER_CONVERSATION_REFERENCES ||--o{ CR_NOTIFICATIONS_SENT : receives
+
+    CHANGE_REQUESTS {
+        string cr_id PK
+        string title
+        text description
+        string state
+        string work_item_type
+        string created_by
+        string created_by_email
+        string assigned_to
+        datetime scheduled_start_date
+        datetime scheduled_end_date
+        string approval_status
+        string priority
+        string risk_level
+        datetime last_synced_at
+        datetime created_at
+        datetime updated_at
+    }
+
+    CR_STATE_HISTORY {
+        int id PK
+        string cr_id FK
+        string field_name
+        text old_value
+        text new_value
+        string changed_by
+        datetime changed_at
+        int revision_number
+    }
+
+    USER_CONVERSATION_REFERENCES {
+        string user_id PK
+        string email
+        string aad_object_id
+        string name
+        text conversation_reference
+        datetime created_at
+        datetime updated_at
+        datetime last_interaction_at
+    }
+
+    CR_NOTIFICATIONS_SENT {
+        int id PK
+        string cr_id FK
+        string event_type
+        string recipient_email FK
+        datetime sent_at
+        string notification_status
+    }

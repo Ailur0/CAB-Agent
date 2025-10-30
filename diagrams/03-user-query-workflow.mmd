@@ -1,0 +1,35 @@
+sequenceDiagram
+    participant User as Teams User
+    participant Bot as Teams Bot
+    participant State as State Manager
+    participant DB as SQL Server
+    participant AI as OpenAI API
+    participant Tools as Azure DevOps Tools
+    participant ADO as Azure DevOps
+
+    User->>Bot: "Show me CR12345"
+    Bot->>State: Save conversation reference
+    State->>DB: Store user reference
+    
+    Bot->>AI: Process query with context
+    AI->>AI: Analyze intent
+    AI->>AI: Select function: get_change_request
+    AI-->>Bot: Function call: get_change_request(CR12345)
+    
+    Bot->>Tools: Execute get_change_request(CR12345)
+    
+    alt Check database first
+        Tools->>DB: Query CR from local DB
+        alt CR found in DB
+            DB-->>Tools: CR data (fast!)
+        else CR not in DB
+            Tools->>ADO: Fetch from API
+            ADO-->>Tools: CR data
+            Tools->>DB: Cache in DB
+        end
+    end
+    
+    Tools-->>Bot: CR details
+    Bot->>AI: Format response
+    AI-->>Bot: Formatted message
+    Bot->>User: 📋 CR Details:<br/>Title: ...<br/>State: ...<br/>Owner: ...

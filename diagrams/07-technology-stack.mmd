@@ -1,0 +1,50 @@
+graph TB
+    subgraph "Frontend"
+        Teams[Microsoft Teams<br/>User Interface]
+    end
+
+    subgraph "Backend - Python"
+        subgraph "Web Framework"
+            AIOHTTP[AIOHTTP<br/>Async Web Server]
+        end
+
+        subgraph "Bot Framework"
+            BotBuilder[Bot Builder SDK<br/>Teams Integration]
+        end
+
+        subgraph "AI/ML"
+            OpenAI[OpenAI API<br/>gpt-4o]
+        end
+
+        subgraph "Scheduling"
+            APScheduler[APScheduler<br/>Background Jobs]
+        end
+
+        subgraph "ORM"
+            SQLAlchemy[SQLAlchemy<br/>Database ORM]
+        end
+    end
+
+    subgraph "Database"
+        SQLServer[(SQL Server<br/>Local/Azure)]
+    end
+
+    subgraph "External APIs"
+        AzureDevOps[Azure DevOps API<br/>TFS Server]
+        GraphAPI[Microsoft Graph API<br/>User Lookup]
+    end
+
+    Teams <--> AIOHTTP
+    AIOHTTP <--> BotBuilder
+    BotBuilder <--> OpenAI
+    AIOHTTP <--> APScheduler
+    APScheduler <--> SQLAlchemy
+    BotBuilder <--> SQLAlchemy
+    SQLAlchemy <--> SQLServer
+    APScheduler <--> AzureDevOps
+    BotBuilder <--> GraphAPI
+
+    style Teams fill:#5B5FC7,stroke:#fff,stroke-width:2px,color:#fff
+    style OpenAI fill:#10A37F,stroke:#fff,stroke-width:2px,color:#fff
+    style SQLServer fill:#326CE5,stroke:#fff,stroke-width:2px,color:#fff
+    style AzureDevOps fill:#0078D4,stroke:#fff,stroke-width:2px,color:#fff

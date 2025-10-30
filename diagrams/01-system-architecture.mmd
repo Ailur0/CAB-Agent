@@ -1,0 +1,68 @@
+graph TB
+    subgraph "External Systems"
+        ADO[Azure DevOps API<br/>TFS Server]
+        Teams[Microsoft Teams]
+        Graph[Microsoft Graph API]
+    end
+
+    subgraph "CAB Agent Application"
+        subgraph "Data Layer"
+            DB[(SQL Server Database<br/>SSMS)]
+            DB_CR[change_requests]
+            DB_HIST[cr_state_history]
+            DB_CONV[user_conversation_references]
+            DB_NOTIF[cr_notifications_sent]
+            
+            DB --> DB_CR
+            DB --> DB_HIST
+            DB --> DB_CONV
+            DB --> DB_NOTIF
+        end
+
+        subgraph "Service Layer"
+            POLL[Polling Service<br/>APScheduler<br/>Every 5 min]
+            EVENT[Event Processor<br/>Change Detection]
+            SYNC[Sync Service<br/>Azure DevOps → DB]
+        end
+
+        subgraph "Bot Layer"
+            BOT[Teams Bot<br/>AIOHTTP Server]
+            STATE[Conversation State<br/>Manager]
+        end
+
+        subgraph "AI Layer"
+            OPENAI[OpenAI API<br/>gpt-4o<br/>Function Calling]
+        end
+
+        subgraph "Tools Layer"
+            TOOLS[Azure DevOps Tools<br/>Query/Update CRs]
+            NOTIF[Notification Tools<br/>Proactive Messaging]
+        end
+    end
+
+    %% External connections
+    ADO -->|REST API| TOOLS
+    ADO -->|Webhooks| BOT
+    Teams -->|Messages| BOT
+    BOT -->|Proactive Messages| Teams
+    Graph -->|User Lookup| BOT
+
+    %% Internal connections
+    POLL -->|Fetch CRs| TOOLS
+    TOOLS -->|API Calls| ADO
+    POLL -->|Store/Update| DB
+    POLL -->|Detect Changes| EVENT
+    EVENT -->|Query Users| DB
+    EVENT -->|Send Notifications| NOTIF
+    NOTIF -->|Teams Messages| BOT
+    BOT -->|Save References| STATE
+    STATE -->|Store| DB
+    BOT -->|Process Query| OPENAI
+    OPENAI -->|Function Calls| TOOLS
+    TOOLS -->|Query Data| DB
+
+    style DB fill:#326CE5,stroke:#fff,stroke-width:2px,color:#fff
+    style OPENAI fill:#10A37F,stroke:#fff,stroke-width:2px,color:#fff
+    style BOT fill:#5B5FC7,stroke:#fff,stroke-width:2px,color:#fff
+    style POLL fill:#FF6B6B,stroke:#fff,stroke-width:2px,color:#fff
+    style EVENT fill:#FFA500,stroke:#fff,stroke-width:2px,color:#fff

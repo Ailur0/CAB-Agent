@@ -1,0 +1,57 @@
+flowchart TD
+    Start([User/System Event]) --> Check{Event Type?}
+    
+    Check -->|User Query| UserFlow[User Query Flow]
+    Check -->|Background Sync| SyncFlow[Sync Flow]
+    Check -->|State Change| NotifFlow[Notification Flow]
+
+    subgraph UserFlow [User Query Flow]
+        U1[User sends message] --> U2[Bot receives]
+        U2 --> U3[Save conversation ref to DB]
+        U3 --> U4[Send to OpenAI]
+        U4 --> U5{Function call needed?}
+        U5 -->|Yes| U6[Execute tool]
+        U6 --> U7[Query DB or API]
+        U7 --> U8[Return result]
+        U5 -->|No| U8
+        U8 --> U9[Send response to user]
+    end
+
+    subgraph SyncFlow [Background Sync Flow]
+        S1[Timer triggers] --> S2[Query Azure DevOps]
+        S2 --> S3[Get all CRs]
+        S3 --> S4{CR in DB?}
+        S4 -->|Yes| S5{Changed?}
+        S4 -->|No| S6[Insert new CR]
+        S5 -->|Yes| S7[Update CR]
+        S7 --> S8[Log to history]
+        S8 --> S9[Trigger event]
+        S5 -->|No| S10[Update last_synced]
+        S6 --> S10
+        S9 --> NotifFlow
+    end
+
+    subgraph NotifFlow [Notification Flow]
+        N1[Change detected] --> N2{Rule matches?}
+        N2 -->|Yes| N3[Get creator email]
+        N2 -->|No| N10[Skip]
+        N3 --> N4{Notification sent?}
+        N4 -->|No| N5[Get conversation ref]
+        N4 -->|Yes| N10
+        N5 --> N6{Ref exists?}
+        N6 -->|Yes| N7[Send Teams message]
+        N6 -->|No| N8[Fallback: Email]
+        N7 --> N9[Log notification]
+        N8 --> N9
+    end
+
+    U9 --> End([End])
+    S10 --> End
+    N9 --> End
+    N10 --> End
+
+    style Start fill:#90EE90
+    style End fill:#FF6B6B
+    style U4 fill:#87CEEB
+    style S2 fill:#FFD700
+    style N7 fill:#FF69B4

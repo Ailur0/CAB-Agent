@@ -1,0 +1,45 @@
+sequenceDiagram
+    participant ADO as Azure DevOps
+    participant Poll as Polling Service
+    participant DB as SQL Server
+    participant Event as Event Processor
+    participant Bot as Teams Bot
+    participant User as Teams User
+
+    Note over Poll: Every 5 minutes
+    Poll->>ADO: Query all CRs
+    ADO-->>Poll: Return CR list
+    
+    loop For each CR
+        Poll->>ADO: Get CR details
+        ADO-->>Poll: CR data
+        Poll->>DB: Check if CR exists
+        
+        alt CR exists in DB
+            DB-->>Poll: Existing CR data
+            Poll->>Poll: Compare states
+            
+            alt State changed
+                Poll->>DB: Update CR
+                Poll->>DB: Log to cr_state_history
+                Poll->>Event: Trigger change event
+                
+                Event->>Event: Check event rules
+                alt Rule matches (e.g., Pending CAB → Approved)
+                    Event->>DB: Get creator email
+                    DB-->>Event: Creator info
+                    Event->>DB: Check if notification sent
+                    
+                    alt Not sent yet
+                        Event->>DB: Get conversation reference
+                        DB-->>Event: Conversation ref
+                        Event->>Bot: Send proactive message
+                        Bot->>User: 🔔 CR Approved notification
+                        Event->>DB: Log notification sent
+                    end
+                end
+            end
+        else New CR
+            Poll->>DB: Insert new CR
+        end
+    end
