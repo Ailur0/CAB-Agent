@@ -6,6 +6,8 @@ from .azure_devops_tool import (
     query_change_requests,
     update_change_request,
     validate_change_request,
+    get_cr_revision_history,
+    query_crs_by_state_change,
     CHANGE_REQUEST_TYPES,
     ALL_CHANGE_TYPES,
 )
@@ -28,6 +30,8 @@ __all__ = [
     "query_change_requests",
     "update_change_request",
     "validate_change_request",
+    "get_cr_revision_history",
+    "query_crs_by_state_change",
     "check_calendar_conflicts",
     "get_team_availability",
     "find_available_time_slots",

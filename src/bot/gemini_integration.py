@@ -1,4 +1,4 @@
-"""Gemini AI integration for Teams bot."""
+"""OpenAI integration for Teams bot."""
 
 import sys
 import os
@@ -9,7 +9,7 @@ from typing import Dict, Any
 # Add parent directory to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-import google.generativeai as genai
+from openai import AsyncOpenAI
 from src.utils.config import get_config
 from src.utils.logging_config import get_logger
 from src.tools import (
@@ -18,108 +18,153 @@ from src.tools import (
     get_change_request,
     update_change_request,
     check_calendar_conflicts,
+    get_cr_revision_history,
+    query_crs_by_state_change,
     CHANGE_REQUEST_TYPES,
 )
 
 logger = get_logger(__name__)
 
 
-class GeminiAgent:
-    """Gemini AI agent for processing change management requests."""
+class OpenAIAgent:
+    """OpenAI agent for processing change management requests."""
     
     def __init__(self):
-        """Initialize the Gemini agent."""
+        """Initialize the OpenAI agent."""
         config = get_config()
         
-        if not config.GOOGLE_API_KEY:
-            raise ValueError("GOOGLE_API_KEY not configured")
+        if not config.OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY not configured")
         
-        genai.configure(api_key=config.GOOGLE_API_KEY)
+        self.client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        self.model = config.ADK_MODEL
+        self.temperature = config.ADK_TEMPERATURE
         
-        # Define tools for function calling
-        tools = [
+        # Define tools for function calling (OpenAI format)
+        self.tools = [
             {
-                "function_declarations": [
-                    {
-                        "name": "query_change_requests",
-                        "description": "Query change requests from RealPage TFS. Use when user asks for CRs or work items.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "state": {
-                                    "type": "string",
-                                    "description": "Filter by state: Active, Approved, Assigned, Awaiting PIR, Cancelled, Draft, In Progress, Pending Approvals, Pending CAB, Pending Closure, Rejected, Validate, Closed"
-                                },
-                                "work_item_types": {
-                                    "type": "array",
-                                    "items": {"type": "string"},
-                                    "description": "Types: Normal Change Request, Emergency Change Request, Standard Change Request"
-                                },
-                                "assigned_to": {
-                                    "type": "string",
-                                    "description": "Filter by assignee email or name (e.g., 'john.doe@realpage.com' or 'John Doe')"
-                                },
-                                "days_back": {
-                                    "type": "integer",
-                                    "description": "Filter by days back from today"
-                                },
-                                "limit": {
-                                    "type": "integer",
-                                    "description": "Max results (default 5)"
-                                }
+                "type": "function",
+                "function": {
+                    "name": "query_change_requests",
+                    "description": "Query change requests from RealPage TFS. Use when user asks for CRs or work items.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "state": {
+                                "type": "string",
+                                "description": "Filter by state: Active, Approved, Assigned, Awaiting PIR, Cancelled, Draft, In Progress, Pending Approvals, Pending CAB, Pending Closure, Rejected, Validate, Closed"
+                            },
+                            "work_item_types": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Types: Normal Change Request, Emergency Change Request, Standard Change Request"
+                            },
+                            "assigned_to": {
+                                "type": "string",
+                                "description": "Filter by assignee email or name (e.g., 'john.doe@realpage.com' or 'John Doe')"
+                            },
+                            "days_back": {
+                                "type": "integer",
+                                "description": "Filter by days back from today"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Max results (default 5)"
                             }
                         }
-                    },
-                    {
-                        "name": "get_change_request",
-                        "description": "Get details of a specific change request by ID",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "cr_id": {
-                                    "type": "string",
-                                    "description": "Work item ID (e.g., '2579597' or 'CR2579597')"
-                                }
-                            },
-                            "required": ["cr_id"]
-                        }
-                    },
-                    {
-                        "name": "update_change_request",
-                        "description": "Update a change request's fields",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "cr_id": {"type": "string", "description": "Work item ID"},
-                                "updates": {"type": "object", "description": "Fields to update"}
-                            },
-                            "required": ["cr_id", "updates"]
-                        }
-                    },
-                    {
-                        "name": "create_change_request",
-                        "description": "Create a new change request in TFS",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"},
-                                "description": {"type": "string"},
-                                "change_type": {"type": "string"},
-                                "scheduled_start_date": {"type": "string"},
-                                "scheduled_end_date": {"type": "string"},
-                                "assigned_to": {"type": "string"}
-                            },
-                            "required": ["title", "description"]
-                        }
                     }
-                ]
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_change_request",
+                    "description": "Get details of a specific change request by ID",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cr_id": {
+                                "type": "string",
+                                "description": "Work item ID (e.g., '2579597' or 'CR2579597')"
+                            }
+                        },
+                        "required": ["cr_id"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "update_change_request",
+                    "description": "Update a change request's fields",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cr_id": {"type": "string", "description": "Work item ID"},
+                            "updates": {"type": "object", "description": "Fields to update"}
+                        },
+                        "required": ["cr_id", "updates"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "create_change_request",
+                    "description": "Create a new change request in TFS",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "change_type": {"type": "string"},
+                            "scheduled_start_date": {"type": "string"},
+                            "scheduled_end_date": {"type": "string"},
+                            "assigned_to": {"type": "string"}
+                        },
+                        "required": ["title", "description"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_cr_revision_history",
+                    "description": "Get revision history for a Change Request, showing all state changes",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "cr_id": {"type": "string", "description": "Work item ID"},
+                            "from_state": {"type": "string", "description": "Optional: Filter FROM this state"},
+                            "to_state": {"type": "string", "description": "Optional: Filter TO this state"},
+                            "date": {"type": "string", "description": "Optional: Filter by date (YYYY-MM-DD)"}
+                        },
+                        "required": ["cr_id"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "query_crs_by_state_change",
+                    "description": "Query CRs that transitioned from one state to another on a specific date. If user asks for 'today', leave date empty/null.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "from_state": {"type": "string", "description": "State CRs transitioned FROM"},
+                            "to_state": {"type": "string", "description": "State CRs transitioned TO"},
+                            "date": {"type": "string", "description": "Optional: Specific date (YYYY-MM-DD). Leave empty for today."},
+                            "work_item_types": {"type": "array", "items": {"type": "string"}, "description": "Optional: CR types"}
+                        },
+                        "required": ["from_state", "to_state"]
+                    }
+                }
             }
         ]
         
-        self.model = genai.GenerativeModel('gemini-2.0-flash-exp', tools=tools)
         self.conversations = {}  # Store conversation history by user_id
         
-        logger.info("GeminiAgent initialized")
+        logger.info("OpenAIAgent initialized")
     
     def _execute_function(self, function_name: str, args: Dict[str, Any]) -> Dict[str, Any]:
         """Execute a TFS function call."""
@@ -129,9 +174,6 @@ class GeminiAgent:
             if function_name == "query_change_requests":
                 state = args.get("state")
                 work_item_types = args.get("work_item_types")
-                # Convert protobuf RepeatedComposite to list if needed
-                if work_item_types and not isinstance(work_item_types, list):
-                    work_item_types = list(work_item_types)
                 limit = int(args.get("limit", 5))
                 days_back = args.get("days_back")
                 assigned_to = args.get("assigned_to")
@@ -191,6 +233,25 @@ class GeminiAgent:
                     assigned_to=args.get("assigned_to")
                 )
             
+            elif function_name == "get_cr_revision_history":
+                cr_id = args.get("cr_id")
+                if not cr_id.startswith("CR"):
+                    cr_id = f"CR{cr_id}"
+                return get_cr_revision_history(
+                    cr_id=cr_id,
+                    from_state=args.get("from_state"),
+                    to_state=args.get("to_state"),
+                    date=args.get("date")
+                )
+            
+            elif function_name == "query_crs_by_state_change":
+                return query_crs_by_state_change(
+                    from_state=args.get("from_state"),
+                    to_state=args.get("to_state"),
+                    date=args.get("date"),
+                    work_item_types=args.get("work_item_types")
+                )
+            
             else:
                 return {"status": "error", "message": f"Unknown function: {function_name}"}
         
@@ -213,10 +274,17 @@ class GeminiAgent:
         try:
             # Get or create conversation history
             if user_id not in self.conversations:
-                chat = self.model.start_chat(history=[])
+                from datetime import datetime
+                current_date = datetime.now().strftime("%Y-%m-%d")
+                current_date_readable = datetime.now().strftime("%B %d, %Y")
                 
-                system_prompt = f"""
+                system_message = {
+                    "role": "system",
+                    "content": f"""
 You are a Change Management Assistant for RealPage TFS in Microsoft Teams.
+
+IMPORTANT: Today's date is {current_date_readable} ({current_date}).
+When users ask for "today", use this date. When they ask for "yesterday", calculate it as one day before today.
 
 Available Change Request Types: {', '.join(CHANGE_REQUEST_TYPES)}
 
@@ -230,49 +298,72 @@ Help users:
 Be concise, friendly, and helpful. Use emojis when appropriate for Teams.
 Reference work item IDs when relevant.
 {f'Current user: {user_name}' if user_name else ''}
+
+CRITICAL: For date-related queries:
+- If user asks for "today", leave the date parameter EMPTY (null/undefined) - the system will use today's date automatically
+- If user asks for a specific date like "yesterday" or "October 28", calculate the exact date in YYYY-MM-DD format and provide it
+- Never use dates from 2023 or other old years unless explicitly requested
 """
-                chat.send_message(system_prompt)
-                self.conversations[user_id] = chat
-            else:
-                chat = self.conversations[user_id]
+                }
+                self.conversations[user_id] = [system_message]
+            
+            # Add user message to conversation history
+            self.conversations[user_id].append({
+                "role": "user",
+                "content": message
+            })
             
             logger.info(f"Processing message for {user_id}: {message}")
             
-            # Send user message
-            response = chat.send_message(message)
+            # Call OpenAI API with function calling
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=self.conversations[user_id],
+                tools=self.tools,
+                tool_choice="auto",
+                temperature=self.temperature
+            )
             
-            # Check for function calls
-            function_calls = []
-            if response.candidates[0].content.parts:
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'function_call') and part.function_call:
-                        function_calls.append(part.function_call)
+            response_message = response.choices[0].message
             
-            # Execute all function calls
-            if function_calls:
-                function_responses = []
+            # Check if the model wants to call functions
+            if response_message.tool_calls:
+                # Add assistant's response to conversation
+                self.conversations[user_id].append(response_message)
                 
-                for function_call in function_calls:
-                    function_name = function_call.name
-                    function_args = dict(function_call.args)
+                # Execute all function calls
+                for tool_call in response_message.tool_calls:
+                    function_name = tool_call.function.name
+                    function_args = json.loads(tool_call.function.arguments)
                     
-                    result = self._execute_function(function_name, function_args)
+                    logger.info(f"Calling function: {function_name}", args=function_args)
                     
-                    function_responses.append(
-                        genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
-                                name=function_name,
-                                response={"result": result}
-                            )
-                        )
-                    )
+                    # Execute the function
+                    function_result = self._execute_function(function_name, function_args)
+                    
+                    # Add function result to conversation
+                    self.conversations[user_id].append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": function_name,
+                        "content": json.dumps(function_result)
+                    })
                 
-                # Send function results back
-                response = chat.send_message(
-                    genai.protos.Content(parts=function_responses)
+                # Get final response from the model
+                second_response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=self.conversations[user_id],
+                    temperature=self.temperature
                 )
-            
-            return response.text if response.text else "✅ Request processed."
+                
+                final_message = second_response.choices[0].message
+                self.conversations[user_id].append(final_message)
+                
+                return final_message.content if final_message.content else "✅ Request processed."
+            else:
+                # No function calls, just return the response
+                self.conversations[user_id].append(response_message)
+                return response_message.content if response_message.content else "✅ Request processed."
         
         except Exception as e:
             logger.error(f"Error processing message: {str(e)}", exc_info=True)
@@ -289,9 +380,14 @@ Reference work item IDs when relevant.
 _agent = None
 
 
-def get_gemini_agent() -> GeminiAgent:
-    """Get or create the global Gemini agent instance."""
+def get_openai_agent() -> OpenAIAgent:
+    """Get or create the global OpenAI agent instance."""
     global _agent
     if _agent is None:
-        _agent = GeminiAgent()
+        _agent = OpenAIAgent()
     return _agent
+
+
+# Backward compatibility alias
+get_gemini_agent = get_openai_agent
+GeminiAgent = OpenAIAgent

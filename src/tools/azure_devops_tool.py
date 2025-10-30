@@ -190,6 +190,13 @@ def get_change_request(cr_id: str) -> Dict[str, Any]:
 
         fields = result.get("fields", {})
 
+        # Get deployment details from custom fields
+        deployment_details = {
+            "is_automated_deployment": fields.get("Custom.IsthisanAzureDevOpsdeployment", fields.get("Custom.IsAutomatedDeployment", fields.get("Custom.AutomatedDeployment"))),
+            "automation_technology": fields.get("Custom.AutomationTechnology"),
+            "deployment_needs_deleted": fields.get("Custom.DeploymentNeedsDeleted", fields.get("Custom.NeedsDeleted")),
+        }
+        
         return {
             "status": "success",
             "cr_id": cr_id,
@@ -200,6 +207,12 @@ def get_change_request(cr_id: str) -> Dict[str, Any]:
             "duration_hours": fields.get("Custom.DurationHours"),
             "created_by": fields.get("System.CreatedBy"),
             "created_date": fields.get("System.CreatedDate"),
+            "assigned_to": fields.get("System.AssignedTo", {}).get("displayName") if isinstance(fields.get("System.AssignedTo"), dict) else fields.get("System.AssignedTo"),
+            "created_by_unique_name": fields.get("System.CreatedBy", {}).get("uniqueName") if isinstance(fields.get("System.CreatedBy"), dict) else None,
+            "scheduled_start_date": fields.get("Custom.ScheduledStartDate", fields.get("Microsoft.VSTS.Scheduling.StartDate")),
+            "scheduled_end_date": fields.get("Custom.ScheduledEndDate", fields.get("Microsoft.VSTS.Scheduling.FinishDate")),
+            "approval_status": fields.get("Custom.ApprovalStatus", fields.get("Microsoft.VSTS.Common.ApprovalStatus")),
+            "deployment_details": deployment_details,
         }
 
     except Exception as e:
@@ -365,3 +378,204 @@ def validate_change_request(cr_id: str) -> Dict[str, Any]:
         "valid": is_valid,
         "issues": issues,
     }
+
+
+def get_cr_revision_history(
+    cr_id: str,
+    from_state: Optional[str] = None,
+    to_state: Optional[str] = None,
+    date: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Get revision history for a Change Request, optionally filtered by state transitions.
+    
+    Args:
+        cr_id: The Change Request ID (e.g., "CR12345" or "12345")
+        from_state: Filter for transitions FROM this state (e.g., "Pending CAB")
+        to_state: Filter for transitions TO this state (e.g., "Approved")
+        date: Filter for changes on this date (YYYY-MM-DD format)
+    
+    Returns:
+        Dictionary containing revision history and state transitions
+    """
+    logger.info(
+        "Getting CR revision history",
+        cr_id=cr_id,
+        from_state=from_state,
+        to_state=to_state,
+        date=date
+    )
+    
+    work_item_id = cr_id.replace("CR", "")
+    
+    try:
+        # Get all revisions for the work item
+        result = azure_devops_auth.call_api(
+            endpoint=f"wit/workitems/{work_item_id}/revisions",
+            method="GET"
+        )
+        
+        revisions = result.get("value", [])
+        
+        # Track state changes
+        state_changes = []
+        previous_state = None
+        
+        for revision in revisions:
+            fields = revision.get("fields", {})
+            current_state = fields.get("System.State")
+            changed_date = fields.get("System.ChangedDate", "")
+            changed_by = fields.get("System.ChangedBy", {})
+            
+            # Parse date for filtering
+            revision_date = None
+            if changed_date:
+                try:
+                    from datetime import datetime
+                    revision_date = datetime.fromisoformat(changed_date.replace("Z", "+00:00")).date()
+                except:
+                    pass
+            
+            # Check if state changed
+            if previous_state and current_state != previous_state:
+                change_info = {
+                    "revision": revision.get("rev"),
+                    "from_state": previous_state,
+                    "to_state": current_state,
+                    "changed_date": changed_date,
+                    "changed_date_only": str(revision_date) if revision_date else None,
+                    "changed_by": changed_by.get("displayName") if isinstance(changed_by, dict) else str(changed_by),
+                    "changed_by_email": changed_by.get("uniqueName") if isinstance(changed_by, dict) else None,
+                }
+                
+                # Apply filters
+                include = True
+                
+                if from_state and previous_state != from_state:
+                    include = False
+                
+                if to_state and current_state != to_state:
+                    include = False
+                
+                if date and revision_date:
+                    from datetime import datetime
+                    filter_date = datetime.strptime(date, "%Y-%m-%d").date()
+                    if revision_date != filter_date:
+                        include = False
+                
+                if include:
+                    state_changes.append(change_info)
+            
+            previous_state = current_state
+        
+        logger.info(
+            "Retrieved CR revision history",
+            cr_id=cr_id,
+            total_revisions=len(revisions),
+            state_changes=len(state_changes)
+        )
+        
+        return {
+            "status": "success",
+            "cr_id": cr_id,
+            "total_revisions": len(revisions),
+            "state_changes": state_changes,
+            "current_state": previous_state
+        }
+    
+    except Exception as e:
+        logger.error(f"Error getting CR revision history: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "cr_id": cr_id,
+            "message": str(e)
+        }
+
+
+def query_crs_by_state_change(
+    from_state: str,
+    to_state: str,
+    date: Optional[str] = None,
+    work_item_types: Optional[List[str]] = None
+) -> Dict[str, Any]:
+    """
+    Query Change Requests that transitioned from one state to another.
+    
+    Args:
+        from_state: The state CRs transitioned FROM (e.g., "Pending CAB")
+        to_state: The state CRs transitioned TO (e.g., "Approved")
+        date: Filter for changes on this date (YYYY-MM-DD format). Defaults to today.
+        work_item_types: List of work item types to query
+    
+    Returns:
+        Dictionary containing CRs that match the state transition criteria
+    """
+    from datetime import datetime, timedelta
+    
+    # Default to today if no date provided
+    if not date:
+        date = datetime.now().strftime("%Y-%m-%d")
+        logger.info("No date provided, using today's date", date=date)
+    else:
+        logger.info("Using provided date", date=date)
+    
+    logger.info(
+        "Querying CRs by state change",
+        from_state=from_state,
+        to_state=to_state,
+        date=date
+    )
+    
+    try:
+        # First, query all CRs in the target state
+        # We'll check their history to see if they transitioned on the specified date
+        crs_in_target_state = query_change_requests(
+            state=to_state,
+            work_item_types=work_item_types
+        )
+        
+        matching_crs = []
+        
+        for cr in crs_in_target_state:
+            cr_id = cr.get("cr_id")  # Fixed: use "cr_id" instead of "id"
+            
+            if not cr_id:
+                logger.warning("CR missing cr_id field", cr=cr)
+                continue
+            
+            # Get revision history for this CR
+            history = get_cr_revision_history(
+                cr_id=cr_id,  # Already a string like "CR12345"
+                from_state=from_state,
+                to_state=to_state,
+                date=date
+            )
+            
+            # If there are matching state changes, include this CR
+            if history.get("status") == "success" and history.get("state_changes"):
+                cr["state_transition"] = history["state_changes"][0]  # Most recent matching transition
+                matching_crs.append(cr)
+        
+        logger.info(
+            "Found CRs with state change",
+            count=len(matching_crs),
+            from_state=from_state,
+            to_state=to_state,
+            date=date
+        )
+        
+        return {
+            "status": "success",
+            "count": len(matching_crs),
+            "from_state": from_state,
+            "to_state": to_state,
+            "date": date,
+            "change_requests": matching_crs
+        }
+    
+    except Exception as e:
+        logger.error(f"Error querying CRs by state change: {str(e)}", exc_info=True)
+        return {
+            "status": "error",
+            "message": str(e)
+        }

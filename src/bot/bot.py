@@ -204,31 +204,31 @@ class ChangeManagementBot(ActivityHandler):
 
     async def _process_with_agent(self, turn_context: TurnContext, message: str):
         """
-        Process message with Gemini AI agent for natural language understanding.
+        Process message with OpenAI agent for natural language understanding.
 
         Args:
             turn_context: Context object for the current turn.
             message: User's message text.
         """
-        logger.info("Processing with Gemini AI", message=message)
+        logger.info("Processing with OpenAI", message=message)
         
-        # Import Gemini agent
-        from src.bot.gemini_integration import get_gemini_agent
+        # Import OpenAI agent
+        from src.bot.gemini_integration import get_openai_agent
         
         try:
             # Get user info
             user_id = turn_context.activity.from_property.id
             user_name = turn_context.activity.from_property.name
             
-            # Process with Gemini AI
-            agent = get_gemini_agent()
+            # Process with OpenAI
+            agent = get_openai_agent()
             response = await agent.process_message(user_id, message, user_name)
             
             # Send response
             await turn_context.send_activity(MessageFactory.text(response))
             
         except Exception as e:
-            logger.error(f"Gemini AI error: {str(e)}", exc_info=True)
+            logger.error(f"OpenAI error: {str(e)}", exc_info=True)
             await turn_context.send_activity(
                 MessageFactory.text(
                     f"❌ Sorry, I encountered an error: {str(e)}\n\n"

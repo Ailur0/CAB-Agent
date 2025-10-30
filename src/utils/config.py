@@ -11,10 +11,8 @@ load_dotenv()
 class Config:
     """Central configuration class for all application settings."""
 
-    # Google Cloud Configuration
-    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
-    GOOGLE_APPLICATION_CREDENTIALS: str = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
-    GOOGLE_CLOUD_PROJECT: str = os.getenv("GOOGLE_CLOUD_PROJECT", "")
+    # OpenAI Configuration
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
     # Azure Bot Configuration
     MICROSOFT_APP_ID: str = os.getenv("MICROSOFT_APP_ID", "")
@@ -62,7 +60,7 @@ class Config:
     BOT_HOST: str = os.getenv("BOT_HOST", "0.0.0.0")
 
     # ADK Configuration
-    ADK_MODEL: str = os.getenv("ADK_MODEL", "gemini-1.5-flash")
+    ADK_MODEL: str = os.getenv("ADK_MODEL", "gpt-4o")
     ADK_TEMPERATURE: float = float(os.getenv("ADK_TEMPERATURE", "0.7"))
 
     # Approval Workflow Configuration
@@ -81,7 +79,7 @@ class Config:
             List of missing configuration keys.
         """
         required_keys = [
-            "GOOGLE_API_KEY",
+            "OPENAI_API_KEY",
             "MICROSOFT_APP_ID",
             "MICROSOFT_APP_PASSWORD",
             "AZURE_CLIENT_ID",
