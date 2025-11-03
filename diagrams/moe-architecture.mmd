@@ -1,0 +1,94 @@
+graph TB
+    subgraph "User Interface Layer"
+        UI[Teams Bot / Web API / CLI]
+    end
+
+    subgraph "Mixture of Experts Layer"
+        Router[Router Agent<br/>Intelligent Orchestrator]
+        
+        subgraph "Specialist Agents"
+            CRMgmt[CR Management Agent<br/>CRUD Operations]
+            Validation[Validation Agent<br/>Compliance & Conflicts]
+            Approval[Approval Agent<br/>Approval Workflows]
+            PIR[PIR Agent<br/>Post-Implementation]
+            Notification[Notification Agent<br/>Communications]
+        end
+    end
+
+    subgraph "Tools & Services Layer"
+        AzDO[Azure DevOps API]
+        Calendar[Calendar API]
+        DB[(SQL Server Database)]
+        Teams[Teams Notifications]
+    end
+
+    subgraph "Background Processing Layer"
+        subgraph "Scalable Polling Service"
+            Scheduler[Scheduler<br/>APScheduler]
+            IncSync[Incremental Sync<br/>Every 5 min]
+            FullSync[Full Sync<br/>Weekly]
+            BatchProc[Batch Processor<br/>100 CRs/batch]
+            WorkerPool[Worker Pool<br/>10 parallel workers]
+        end
+        
+        subgraph "Distributed Task Queue"
+            Redis[(Redis<br/>Message Broker)]
+            CeleryWorker[Celery Workers<br/>10-50 workers]
+            CeleryBeat[Celery Beat<br/>Scheduler]
+            Flower[Flower<br/>Monitoring UI]
+        end
+        
+        subgraph "Health Monitoring"
+            HealthCheck[Health Monitor]
+            Metrics[Metrics Tracker]
+            Alerts[Alert System]
+        end
+    end
+
+    UI --> Router
+    Router --> CRMgmt
+    Router --> Validation
+    Router --> Approval
+    Router --> PIR
+    Router --> Notification
+
+    CRMgmt --> AzDO
+    Validation --> AzDO
+    Validation --> Calendar
+    Approval --> Teams
+    PIR --> AzDO
+    Notification --> Teams
+
+    CRMgmt --> DB
+    Validation --> DB
+    Approval --> DB
+    PIR --> DB
+
+    Scheduler --> IncSync
+    Scheduler --> FullSync
+    IncSync --> BatchProc
+    FullSync --> BatchProc
+    BatchProc --> WorkerPool
+    WorkerPool --> AzDO
+    WorkerPool --> DB
+
+    CeleryBeat --> CeleryWorker
+    CeleryWorker --> Redis
+    CeleryWorker --> DB
+    CeleryWorker --> Notification
+
+    HealthCheck --> DB
+    HealthCheck --> Scheduler
+    HealthCheck --> Redis
+    HealthCheck --> Metrics
+
+    style Router fill:#4CAF50,stroke:#2E7D32,color:#fff
+    style CRMgmt fill:#2196F3,stroke:#1565C0,color:#fff
+    style Validation fill:#2196F3,stroke:#1565C0,color:#fff
+    style Approval fill:#2196F3,stroke:#1565C0,color:#fff
+    style PIR fill:#2196F3,stroke:#1565C0,color:#fff
+    style Notification fill:#2196F3,stroke:#1565C0,color:#fff
+    style BatchProc fill:#FF9800,stroke:#E65100,color:#fff
+    style WorkerPool fill:#FF9800,stroke:#E65100,color:#fff
+    style Redis fill:#DC143C,stroke:#8B0000,color:#fff
+    style CeleryWorker fill:#90EE90,stroke:#228B22,color:#000

@@ -22,6 +22,10 @@ from .notification_tool import (
     notify_approval_status,
     notify_escalation,
     notify_reminder,
+    notify_pir_request,
+    notify_pir_reminder,
+    notify_pir_escalation,
+    notify_pir_completion,
 )
 
 __all__ = [
@@ -40,6 +44,10 @@ __all__ = [
     "notify_approval_status",
     "notify_escalation",
     "notify_reminder",
+    "notify_pir_request",
+    "notify_pir_reminder",
+    "notify_pir_escalation",
+    "notify_pir_completion",
     "CHANGE_REQUEST_TYPES",
     "ALL_CHANGE_TYPES",
 ]

@@ -109,6 +109,37 @@ class CRNotificationSent(Base):
         return f"<CRNotificationSent(cr_id='{self.cr_id}', event='{self.event_type}', to='{self.recipient_email}')>"
 
 
+class PIRTracking(Base):
+    """Track PIR (Post Implementation Review) status and completion."""
+
+    __tablename__ = "pir_tracking"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    cr_id = Column(String(50), nullable=False, unique=True, index=True)
+    cr_title = Column(String(500))
+    requester_email = Column(String(255), index=True)
+    status = Column(String(50), nullable=False, index=True)  # pending, escalated, completed
+    reviewer_count = Column(Integer, default=0)
+    
+    # Timestamps
+    initiated_at = Column(DateTime, default=datetime.utcnow, index=True)
+    reminder_due_at = Column(DateTime, index=True)
+    escalation_due_at = Column(DateTime, index=True)
+    reminder_sent = Column(Integer, default=0)  # Using Integer as Boolean for SQL Server compatibility
+    reminder_sent_at = Column(DateTime)
+    escalation_sent = Column(Integer, default=0)  # Using Integer as Boolean
+    escalation_sent_at = Column(DateTime)
+    completed_at = Column(DateTime, index=True)
+    completed_by = Column(String(255))
+    
+    # Metrics
+    completion_time_hours = Column(Integer)
+    pir_comments = Column(Text)
+    
+    def __repr__(self):
+        return f"<PIRTracking(cr_id='{self.cr_id}', status='{self.status}')>"
+
+
 # Database connection functions
 
 

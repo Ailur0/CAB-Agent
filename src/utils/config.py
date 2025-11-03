@@ -14,10 +14,13 @@ class Config:
     # OpenAI Configuration
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 
-    # Azure Bot Configuration
-    MICROSOFT_APP_ID: str = os.getenv("MICROSOFT_APP_ID", "")
-    MICROSOFT_APP_PASSWORD: str = os.getenv("MICROSOFT_APP_PASSWORD", "")
-    MICROSOFT_APP_TYPE: str = os.getenv("MICROSOFT_APP_TYPE", "MultiTenant")
+    # Teams Webhook Configuration
+    TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
+    
+    # Azure Bot Configuration - REMOVED (using webhooks instead)
+    # MICROSOFT_APP_ID: str = os.getenv("MICROSOFT_APP_ID", "")
+    # MICROSOFT_APP_PASSWORD: str = os.getenv("MICROSOFT_APP_PASSWORD", "")
+    # MICROSOFT_APP_TYPE: str = os.getenv("MICROSOFT_APP_TYPE", "MultiTenant")
 
     # Microsoft Graph API Configuration
     AZURE_CLIENT_ID: str = os.getenv("AZURE_CLIENT_ID", "")
@@ -63,8 +66,29 @@ class Config:
     APPROVAL_TIMEOUT_MINUTES: int = int(os.getenv("APPROVAL_TIMEOUT_MINUTES", "30"))
     ESCALATION_MANAGER_EMAIL: str = os.getenv("ESCALATION_MANAGER_EMAIL", "")
 
+    # PIR (Post Implementation Review) Configuration
+    PIR_REMINDER_HOURS: int = int(os.getenv("PIR_REMINDER_HOURS", "24"))
+    PIR_ESCALATION_HOURS: int = int(os.getenv("PIR_ESCALATION_HOURS", "48"))
+    CHANGE_MANAGER_EMAIL: str = os.getenv("CHANGE_MANAGER_EMAIL", os.getenv("ESCALATION_MANAGER_EMAIL", ""))
+
+    # Email/SMTP Configuration
+    SMTP_SERVER: str = os.getenv("SMTP_SERVER", "mail.realpage.com")
+    SMTP_PORT: int = int(os.getenv("SMTP_PORT", "25"))
+    SMTP_USE_SSL: bool = os.getenv("SMTP_USE_SSL", "true").lower() == "true"
+    SMTP_USERNAME: str = os.getenv("SMTP_USERNAME", "")
+    SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_FROM_EMAIL: str = os.getenv("SMTP_FROM_EMAIL", "")
+    SMTP_FROM_NAME: str = os.getenv("SMTP_FROM_NAME", "CAB Agent System")
+    EMAIL_IS_ACTIVE: bool = os.getenv("EMAIL_IS_ACTIVE", "true").lower() == "true"
+    EMAIL_MAX_RETRIES: int = int(os.getenv("EMAIL_MAX_RETRIES", "3"))
+    EMAIL_RETRY_DELAY_MINUTES: int = int(os.getenv("EMAIL_RETRY_DELAY_MINUTES", "5"))
+
     # Logging
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    
+    # Google ADK Configuration
+    ADK_MODEL: str = os.getenv("ADK_MODEL", "gemini-2.0-flash-exp")
+    ADK_TEMPERATURE: float = float(os.getenv("ADK_TEMPERATURE", "0.7"))
 
     @classmethod
     def validate(cls) -> list[str]:
@@ -74,18 +98,18 @@ class Config:
         Returns:
             List of missing configuration keys.
         """
-        required_keys = [
-            "OPENAI_API_KEY",
-            "MICROSOFT_APP_ID",
-            "MICROSOFT_APP_PASSWORD",
+        # Optional keys - only warn if missing
+        optional_keys = [
             "AZURE_CLIENT_ID",
             "AZURE_CLIENT_SECRET",
             "AZURE_TENANT_ID",
+            "SMTP_USERNAME",
+            "SMTP_PASSWORD",
         ]
 
         missing = []
-        for key in required_keys:
-            if not getattr(cls, key):
+        for key in optional_keys:
+            if hasattr(cls, key) and not getattr(cls, key):
                 missing.append(key)
 
         return missing

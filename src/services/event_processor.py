@@ -2,6 +2,7 @@
 
 import sys
 import os
+import requests
 import json
 
 # Add parent directory to path
@@ -9,7 +10,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from src.database import get_session, UserConversationReference, CRNotificationSent
 from src.utils import get_logger, Config
-from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings
 
 logger = get_logger(__name__)
 
@@ -20,6 +20,7 @@ EVENT_RULES = {
         {"from": "Pending CAB", "to": "Rejected", "notify": "creator"},
         {"from": "Draft", "to": "Pending CAB", "notify": "cab_members"},
         {"from": "Approved", "to": "In Progress", "notify": "creator"},
+        {"from": "In Progress", "to": "Awaiting PIR", "notify": "creator", "action": "initiate_pir"},
         {"from": "In Progress", "to": "Closed", "notify": "creator"},
     ],
 }
@@ -60,17 +61,22 @@ async def handle_state_change(cr_id, from_state, to_state, cr_details):
             elif rule["notify"] == "cab_members":
                 # TODO: Implement CAB member notification
                 logger.info("CAB member notification not yet implemented")
+            
+            # Handle special actions
+            if rule.get("action") == "initiate_pir":
+                await initiate_pir_workflow(cr_id, cr_details)
 
 
 async def notify_creator(cr_id, from_state, to_state, cr_details):
-    """Send notification to CR creator."""
+    """Send notification to CR creator via Teams webhook."""
     creator_email = cr_details.get("created_by_unique_name")
+    title = cr_details.get("title", "")
     
     if not creator_email:
         logger.warning(f"No creator email for CR {cr_id}")
         return
     
-    logger.info(f"Notifying creator {creator_email} about CR {cr_id}")
+    logger.info(f"Notifying about CR {cr_id} via Teams webhook")
     
     session = get_session()
     
@@ -85,93 +91,129 @@ async def notify_creator(cr_id, from_state, to_state, cr_details):
         )
         
         if existing:
-            logger.info(f"Notification already sent to {creator_email} for CR {cr_id}")
+            logger.info(f"Notification already sent for CR {cr_id}")
             return
         
-        # Get conversation reference
-        user_ref = (
-            session.query(UserConversationReference)
-            .filter_by(email=creator_email)
-            .first()
-        )
-        
-        if not user_ref:
-            logger.warning(f"No conversation reference for {creator_email}")
-            # TODO: Fallback to email
-            return
-        
-        # Parse conversation reference from JSON string
-        conversation_reference = json.loads(user_ref.conversation_reference)
-        
-        # Send Teams message
-        message = format_notification_message(cr_id, from_state, to_state, cr_details)
-        
-        await send_proactive_message(conversation_reference, message)
-        
-        # Log notification
-        notification = CRNotificationSent(
+        # Send Teams webhook notification
+        success = send_teams_webhook_notification(
             cr_id=cr_id,
-            event_type=event_type,
-            recipient_email=creator_email,
+            title=title,
+            creator_email=creator_email,
+            from_state=from_state,
+            to_state=to_state
         )
-        session.add(notification)
-        session.commit()
         
-        logger.info(f"Notification sent to {creator_email} for CR {cr_id}")
+        if success:
+            # Log notification
+            notification = CRNotificationSent(
+                cr_id=cr_id,
+                event_type=event_type,
+                recipient_email=creator_email,
+            )
+            session.add(notification)
+            session.commit()
+            
+            logger.info(f"Teams webhook notification sent for CR {cr_id}")
         
     except Exception as e:
-        logger.error(f"Failed to notify creator", error=str(e))
+        logger.error(f"Failed to notify via webhook", error=str(e))
         session.rollback()
     finally:
         session.close()
 
 
-def format_notification_message(cr_id, from_state, to_state, cr_details):
-    """Format notification message for Teams."""
-    title = cr_details.get("title", "")
+async def initiate_pir_workflow(cr_id, cr_details):
+    """Initiate PIR tracking workflow when CR moves to Awaiting PIR."""
+    logger.info(f"Initiating PIR workflow for CR {cr_id}")
     
-    if to_state == "Approved":
+    try:
+        # Import here to avoid circular dependency
+        from src.agents.pir_agent import initiate_pir_tracking
+        
+        title = cr_details.get("title", "")
+        creator_email = cr_details.get("created_by_unique_name")
+        
+        if not creator_email:
+            logger.warning(f"No creator email for CR {cr_id}, cannot initiate PIR")
+            return
+        
+        # Initiate PIR tracking
+        result = initiate_pir_tracking(
+            cr_id=cr_id,
+            cr_title=title,
+            requester_email=creator_email,
+        )
+        
+        if result.get("status") == "success":
+            logger.info(f"PIR workflow initiated for CR {cr_id}", pir_id=result.get("pir_id"))
+        else:
+            logger.error(f"Failed to initiate PIR workflow for CR {cr_id}", error=result.get("message"))
+            
+    except Exception as e:
+        logger.error(f"Error initiating PIR workflow for CR {cr_id}", error=str(e))
+
+
+def send_teams_webhook_notification(cr_id, title, creator_email, from_state, to_state):
+    """Send notification via Teams webhook."""
+    webhook_url = Config.TEAMS_WEBHOOK_URL
+    
+    if not webhook_url:
+        logger.error("TEAMS_WEBHOOK_URL not configured in .env file")
+        return False
+    
+    # Choose emoji and color based on new state
+    if "Approved" in to_state:
         emoji = "✅"
-        status = "Approved"
-    elif to_state == "Rejected":
+        color = "28A745"  # Green
+    elif "Rejected" in to_state:
         emoji = "❌"
-        status = "Rejected"
-    elif to_state == "In Progress":
+        color = "DC3545"  # Red
+    elif "Progress" in to_state:
         emoji = "🚀"
-        status = "In Progress"
-    elif to_state == "Closed":
+        color = "0078D4"  # Blue
+    elif "PIR" in to_state:
+        emoji = "📋"
+        color = "FFC107"  # Yellow
+    elif "Closed" in to_state:
         emoji = "✔️"
-        status = "Closed"
+        color = "6C757D"  # Gray
     else:
         emoji = "🔔"
-        status = to_state
+        color = "FFC107"  # Yellow
     
-    message = f"""{emoji} **CR Status Update**
-
-**CR ID:** {cr_id}
-**Title:** {title}
-**Status:** {from_state} → {status}
-
-Your change request has been updated."""
+    # Build MessageCard payload
+    payload = {
+        "@type": "MessageCard",
+        "@context": "https://schema.org/extensions",
+        "summary": f"CR {cr_id} Status Update",
+        "themeColor": color,
+        "title": f"{emoji} CR Status Update: {cr_id}",
+        "text": "Change request status has changed.",
+        "sections": [{
+            "facts": [
+                {"name": "CR ID", "value": cr_id},
+                {"name": "Title", "value": title[:100]},  # Truncate long titles
+                {"name": "Creator", "value": creator_email},
+                {"name": "Previous Status", "value": from_state},
+                {"name": "New Status", "value": to_state}
+            ]
+        }]
+    }
     
-    return message
-
-
-async def send_proactive_message(conversation_reference, message):
-    """Send proactive message via Teams bot."""
-    # Create adapter
-    settings = BotFrameworkAdapterSettings(
-        app_id=Config.MICROSOFT_APP_ID,
-        app_password=Config.MICROSOFT_APP_PASSWORD,
-    )
-    adapter = BotFrameworkAdapter(settings)
-    
-    # Send message
-    async def callback(turn_context):
-        await turn_context.send_activity(message)
-    
-    await adapter.continue_conversation(
-        conversation_reference,
-        callback,
-        Config.MICROSOFT_APP_ID,
-    )
+    try:
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            logger.info("Teams webhook notification sent", cr_id=cr_id)
+            return True
+        else:
+            logger.error(
+                "Failed to send Teams webhook",
+                status=response.status_code,
+                response=response.text
+            )
+            return False
+            
+    except Exception as e:
+        logger.error("Error sending Teams webhook", error=str(e))
+        return False
