@@ -9,6 +9,8 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 load_dotenv()
 
+from sqlalchemy import text
+
 from src.database import init_database, get_session
 from src.utils import get_logger
 
@@ -37,10 +39,11 @@ def setup():
         
         # Test connection
         session = get_session()
-        result = session.execute("SELECT 1 AS test").fetchone()
-        print(f"✅ Database connection verified! Result: {result}")
-        
-        session.close()
+        try:
+            result = session.execute(text("SELECT 1 AS test")).fetchone()
+            print(f"✅ Database connection verified! Result: {result}")
+        finally:
+            session.close()
         
         print("\n✨ Setup complete! Database is ready.")
         print("\nTables created:")
