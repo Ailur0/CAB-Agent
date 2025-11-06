@@ -301,12 +301,114 @@ def query_change_requests(
         work_items = result.get("workItems", [])
         logger.info("Query returned results", count=len(work_items))
 
-        # Fetch details for each work item
-        cr_list = []
-        for item in work_items[:10]:  # Limit to 10 for performance
-            cr_details = get_change_request(f"CR{item['id']}")
-            if cr_details.get("status") == "success":
-                cr_list.append(cr_details)
+        if not work_items:
+            return []
+
+        cr_list: List[Dict[str, Any]] = []
+        # Reduce batch size to 50 for more reliable requests
+        # Azure DevOps API supports up to 200, but smaller batches are more stable
+        batch_size = 50
+
+        for start in range(0, len(work_items), batch_size):
+            batch = work_items[start:start + batch_size]
+            
+            # Validate and extract IDs
+            batch_ids = []
+            for item in batch:
+                item_id = item.get("id")
+                if item_id and isinstance(item_id, int):
+                    batch_ids.append(item_id)
+                else:
+                    logger.warning("Invalid work item ID", item=item)
+            
+            if not batch_ids:
+                logger.warning("No valid IDs in batch", batch_start=start)
+                continue
+
+            payload = {
+                "ids": batch_ids,
+                "fields": [
+                    # Standard System fields (always available)
+                    "System.Title",
+                    "System.Description",
+                    "System.State",
+                    "System.WorkItemType",
+                    "System.CreatedBy",
+                    "System.AssignedTo",
+                    "System.CreatedDate",
+                    # Standard Microsoft VSTS fields (commonly available)
+                    "Microsoft.VSTS.Scheduling.StartDate",
+                    "Microsoft.VSTS.Scheduling.FinishDate",
+                    "Microsoft.VSTS.Common.ClosedDate",
+                    # Note: Custom fields removed as they don't exist in this TFS instance
+                    # If you need custom fields, verify they exist first using the Fields API
+                ],
+            }
+
+            try:
+                logger.info(
+                    "Fetching CR batch",
+                    batch_start=start,
+                    batch_size=len(batch_ids),
+                    id_range=f"{batch_ids[0]}-{batch_ids[-1]}" if batch_ids else "empty",
+                )
+                
+                batch_result = azure_devops_auth.call_api(
+                    endpoint="wit/workitemsbatch",
+                    method="POST",
+                    data=payload,
+                )
+                
+                logger.info(
+                    "Successfully fetched CR batch",
+                    batch_start=start,
+                    results_count=len(batch_result.get("value", [])),
+                )
+            except Exception as batch_error:
+                logger.error(
+                    "Failed to fetch CR batch",
+                    error=str(batch_error),
+                    batch_start=start,
+                    batch_size=len(batch_ids),
+                    batch_ids=batch_ids[:5],  # Log first 5 IDs for debugging
+                )
+                # Continue processing other batches
+                continue
+
+            for work_item in batch_result.get("value", []):
+                fields = work_item.get("fields", {})
+
+                created_by = fields.get("System.CreatedBy")
+                if isinstance(created_by, dict):
+                    created_by_name = created_by.get("displayName")
+                    created_by_email = created_by.get("uniqueName")
+                else:
+                    created_by_name = created_by
+                    created_by_email = None
+
+                assigned_to = fields.get("System.AssignedTo")
+                if isinstance(assigned_to, dict):
+                    assigned_to_name = assigned_to.get("displayName")
+                else:
+                    assigned_to_name = assigned_to
+
+                cr_list.append(
+                    {
+                        "status": "success",
+                        "cr_id": f"CR{work_item.get('id')}",
+                        "title": fields.get("System.Title"),
+                        "description": fields.get("System.Description"),
+                        "state": fields.get("System.State"),
+                        "work_item_type": fields.get("System.WorkItemType"),
+                        "created_by": created_by_name,
+                        "created_by_unique_name": created_by_email,
+                        "scheduled_start_date": fields.get("Microsoft.VSTS.Scheduling.StartDate"),
+                        "scheduled_end_date": fields.get("Microsoft.VSTS.Scheduling.FinishDate"),
+                        "closed_date": fields.get("Microsoft.VSTS.Common.ClosedDate"),
+                        "assigned_to": assigned_to_name,
+                        "created_date": fields.get("System.CreatedDate"),
+                    }
+                )
 
         return cr_list
 
