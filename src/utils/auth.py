@@ -2,6 +2,7 @@
 
 import msal
 import requests
+import time
 from typing import Optional, Dict, Any
 from google.oauth2 import service_account
 from google.auth.transport.requests import Request
@@ -183,31 +184,91 @@ class AzureDevOpsAuthClient:
         method: str = "GET",
         data: Optional[Dict] = None,
         api_version: str = "7.0",
+        max_retries: int = 3,
     ) -> Dict[str, Any]:
         """
-        Make an authenticated request to Azure DevOps API.
+        Make an authenticated request to Azure DevOps API with retry logic.
 
         Args:
             endpoint: API endpoint (relative to project).
             method: HTTP method.
             data: Optional request body.
             api_version: Azure DevOps API version.
+            max_retries: Maximum number of retry attempts for transient errors.
 
         Returns:
             JSON response from the API.
 
         Raises:
-            requests.HTTPError: If the request fails.
+            requests.HTTPError: If the request fails after all retries.
         """
         url = f"{self.base_url}/{self.project}/_apis/{endpoint}?api-version={api_version}"
         headers = self.get_auth_headers()
 
         logger.info("Calling Azure DevOps API", endpoint=endpoint, method=method)
 
-        response = requests.request(method=method, url=url, headers=headers, json=data)
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = requests.request(method=method, url=url, headers=headers, json=data, timeout=30)
 
-        response.raise_for_status()
-        return response.json()
+                try:
+                    response.raise_for_status()
+                except requests.HTTPError as e:
+                    # Log response body for debugging
+                    try:
+                        error_detail = response.json()
+                        logger.error(
+                            "Azure DevOps API error",
+                            status_code=response.status_code,
+                            error_detail=error_detail,
+                            endpoint=endpoint,
+                            attempt=attempt + 1,
+                        )
+                    except:
+                        logger.error(
+                            "Azure DevOps API error",
+                            status_code=response.status_code,
+                            response_text=response.text[:500],
+                            endpoint=endpoint,
+                            attempt=attempt + 1,
+                        )
+                    
+                    # Retry on rate limiting (429) or server errors (5xx)
+                    if response.status_code in [429, 500, 502, 503, 504] and attempt < max_retries - 1:
+                        wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                        logger.warning(
+                            "Retrying after error",
+                            status_code=response.status_code,
+                            wait_time=wait_time,
+                            attempt=attempt + 1,
+                        )
+                        time.sleep(wait_time)
+                        continue
+                    raise
+                
+                return response.json()
+                
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt
+                    logger.warning(
+                        "Request failed, retrying",
+                        error=str(e),
+                        wait_time=wait_time,
+                        attempt=attempt + 1,
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error("Request failed after all retries", error=str(e))
+                    raise
+        
+        # Should not reach here, but just in case
+        if last_error:
+            raise last_error
+        raise Exception("Unexpected error in API call")
 
 
 # Lazy-loaded singleton instances
