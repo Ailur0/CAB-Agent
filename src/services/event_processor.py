@@ -94,8 +94,8 @@ async def notify_creator(cr_id, from_state, to_state, cr_details):
             logger.info(f"Notification already sent for CR {cr_id}")
             return
         
-        # Send Teams webhook notification
-        success = send_teams_webhook_notification(
+        # Send Teams webhook notification (channel)
+        webhook_success = send_teams_webhook_notification(
             cr_id=cr_id,
             title=title,
             creator_email=creator_email,
@@ -103,7 +103,16 @@ async def notify_creator(cr_id, from_state, to_state, cr_details):
             to_state=to_state
         )
         
-        if success:
+        # Send Power Automate notification (personal DM)
+        power_automate_success = send_power_automate_notification(
+            user_email=creator_email,
+            cr_id=cr_id,
+            title=title,
+            from_state=from_state,
+            to_state=to_state
+        )
+        
+        if webhook_success or power_automate_success:
             # Log notification
             notification = CRNotificationSent(
                 cr_id=cr_id,
@@ -113,7 +122,7 @@ async def notify_creator(cr_id, from_state, to_state, cr_details):
             session.add(notification)
             session.commit()
             
-            logger.info(f"Teams webhook notification sent for CR {cr_id}")
+            logger.info(f"Notification sent for CR {cr_id}", webhook=webhook_success, power_automate=power_automate_success)
         
     except Exception as e:
         logger.error(f"Failed to notify via webhook", error=str(e))
@@ -158,7 +167,7 @@ def send_teams_webhook_notification(cr_id, title, creator_email, from_state, to_
     webhook_url = Config.TEAMS_WEBHOOK_URL
     
     if not webhook_url:
-        logger.error("TEAMS_WEBHOOK_URL not configured in .env file")
+        logger.warning("TEAMS_WEBHOOK_URL not configured in .env file")
         return False
     
     # Choose emoji and color based on new state
@@ -181,6 +190,9 @@ def send_teams_webhook_notification(cr_id, title, creator_email, from_state, to_
         emoji = "🔔"
         color = "FFC107"  # Yellow
     
+    # Generate CR link
+    cr_link = Config.get_work_item_url(cr_id.replace("CR", ""))
+    
     # Build MessageCard payload
     payload = {
         "@type": "MessageCard",
@@ -197,6 +209,11 @@ def send_teams_webhook_notification(cr_id, title, creator_email, from_state, to_
                 {"name": "Previous Status", "value": from_state},
                 {"name": "New Status", "value": to_state}
             ]
+        }],
+        "potentialAction": [{
+            "@type": "OpenUri",
+            "name": "View CR in Azure DevOps",
+            "targets": [{"os": "default", "uri": cr_link}]
         }]
     }
     
@@ -216,4 +233,43 @@ def send_teams_webhook_notification(cr_id, title, creator_email, from_state, to_
             
     except Exception as e:
         logger.error("Error sending Teams webhook", error=str(e))
+        return False
+
+
+def send_power_automate_notification(user_email, cr_id, title, from_state, to_state):
+    """Send personal notification via Power Automate flow."""
+    flow_url = Config.POWER_AUTOMATE_URL
+    
+    if not flow_url:
+        logger.debug("POWER_AUTOMATE_URL not configured, skipping personal notification")
+        return False
+    
+    # Generate CR link
+    cr_link = Config.get_work_item_url(cr_id.replace("CR", ""))
+    
+    payload = {
+        "user_email": user_email,
+        "cr_id": cr_id,
+        "title": title,
+        "from_state": from_state,
+        "to_state": to_state,
+        "cr_link": cr_link
+    }
+    
+    try:
+        response = requests.post(flow_url, json=payload, timeout=10)
+        
+        if response.status_code == 202:  # Power Automate returns 202 Accepted
+            logger.info("Power Automate notification sent", user_email=user_email, cr_id=cr_id)
+            return True
+        else:
+            logger.error(
+                "Failed to send Power Automate notification",
+                status=response.status_code,
+                response=response.text
+            )
+            return False
+            
+    except Exception as e:
+        logger.error("Error sending Power Automate notification", error=str(e))
         return False

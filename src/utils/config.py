@@ -17,6 +17,9 @@ class Config:
     # Teams Webhook Configuration
     TEAMS_WEBHOOK_URL: str = os.getenv("TEAMS_WEBHOOK_URL", "")
     
+    # Power Automate Configuration (optional - for personal messages)
+    POWER_AUTOMATE_URL: str = os.getenv("POWER_AUTOMATE_URL", "")
+    
     # Azure Bot Configuration - REMOVED (using webhooks instead)
     # MICROSOFT_APP_ID: str = os.getenv("MICROSOFT_APP_ID", "")
     # MICROSOFT_APP_PASSWORD: str = os.getenv("MICROSOFT_APP_PASSWORD", "")
@@ -37,6 +40,16 @@ class Config:
     # TFS/Azure DevOps Server Configuration
     AZURE_DEVOPS_SERVER_URL: str = os.getenv("AZURE_DEVOPS_SERVER_URL", "")
     AZURE_DEVOPS_COLLECTION: str = os.getenv("AZURE_DEVOPS_COLLECTION", "")
+    
+    @classmethod
+    def get_work_item_url(cls, work_item_id: str) -> str:
+        """Generate the URL to view a work item in Azure DevOps/TFS."""
+        if cls.AZURE_DEVOPS_SERVER_URL:
+            # On-premises TFS/Azure DevOps Server
+            return f"{cls.AZURE_DEVOPS_SERVER_URL}/{cls.AZURE_DEVOPS_COLLECTION}/{cls.AZURE_DEVOPS_PROJECT}/_workitems/edit/{work_item_id}"
+        else:
+            # Azure DevOps Cloud
+            return f"https://dev.azure.com/{cls.AZURE_DEVOPS_ORG}/{cls.AZURE_DEVOPS_PROJECT}/_workitems/edit/{work_item_id}"
     
     # Determine base URL (supports both cloud and on-premises)
     @classmethod
