@@ -19,12 +19,17 @@ logger = get_logger(__name__)
 async def main():
     """Main entry point for reminder service."""
     print("\n" + "=" * 70)
-    print("CAB AGENT - CR REMINDER SERVICE")
+    print("CAB AGENT - COMPREHENSIVE CR REMINDER SERVICE")
     print("=" * 70)
-    print("\n🔔 Starting 15-minute reminder service...")
-    print("   - Checks every 5 minutes for CRs starting soon")
-    print("   - Sends Power Automate notification to CR creator")
-    print("   - Includes link to update CR status\n")
+    print("\n🔔 Starting multi-state reminder service...")
+    print("   Flow 1: Approved State")
+    print("     - 20min before start: Remind to transition to In Progress")
+    print("     - At start time: Follow-up if still Approved")
+    print("\n   Flow 2: In Progress State")
+    print("     - 20min before end: Remind to fill results")
+    print("     - At end time: Request status/extension if incomplete")
+    print("\n   Flow 3: Awaiting PIR State")
+    print("     - Daily reminders to complete PIR\n")
     
     try:
         # Start the reminder scheduler
@@ -32,9 +37,9 @@ async def main():
         
         print("✅ Reminder service started successfully!")
         print("\n📋 Service details:")
-        print("   - Check interval: 5 minutes")
-        print("   - Reminder window: 15 minutes before start")
-        print("   - Target states: Approved, Scheduled")
+        print("   - Approved/In Progress check: Every 5 minutes")
+        print("   - Awaiting PIR check: Every hour")
+        print("   - Notification method: Power Automate → Teams")
         print("\n💡 Press Ctrl+C to stop\n")
         
         # Keep the service running
