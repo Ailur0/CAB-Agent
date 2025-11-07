@@ -8,6 +8,7 @@ CAB Agent is a change-management assistant that automates Change Advisory Board 
 - **Scalable Polling Service** – Batch processing, worker pools, and incremental/full sync strategies support 90k+ change requests efficiently.
 - **Distributed Task Queue** – Celery + Redis handle asynchronous work, retries, and scheduled jobs for sync and messaging workloads.
 - **Health Monitoring & Metrics** – System-wide health checks, resource monitoring, and API endpoints surface operational insights.
+- **15-Minute CR Reminders** – Automated personal Teams notifications to CR creators before scheduled start times via Power Automate.
 
 ## Project Structure
 ```text
@@ -93,6 +94,7 @@ For SQL Server initialization steps tailored to Windows + SSMS workflows, see [d
 | Scalable Polling Service | `src/services/scalable_polling_service.py` | Batch + worker-pool sync of Azure DevOps CRs. |
 | Task Queue | `src/services/task_queue.py` | Celery tasks for sync, batches, and notifications. |
 | Monitoring | `src/services/monitoring.py` | Health summaries, resource metrics, and API hooks. |
+| Reminder Service | `src/services/reminder_service.py` | Sends 15-minute pre-start reminders via Power Automate. |
 
 ## Testing
 Run the automated tests with:
@@ -108,6 +110,7 @@ Refer to `tests/` for targeted agent and service coverage, including Power Autom
 - [docs/SCALING_GUIDE.md](docs/SCALING_GUIDE.md) – Scaling strategies and deployment scenarios.
 - [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) – Environment setup across phases.
 - [docs/POWER_AUTOMATE_SETUP.md](docs/POWER_AUTOMATE_SETUP.md) – Integration steps for proactive notification flows.
+- [docs/REMINDER_SERVICE_SETUP.md](docs/REMINDER_SERVICE_SETUP.md) – 15-minute CR reminder configuration and cost model.
 
 Visual references are available in `diagrams/` (see [diagrams/README.md](diagrams/README.md)).
 
