@@ -1,4 +1,4 @@
-"""Scheduled reminder service to notify CR creators 15 minutes before start time."""
+"""Comprehensive CR reminder service with multi-state workflows."""
 
 import sys
 import os
@@ -16,108 +16,236 @@ import requests
 logger = get_logger(__name__)
 
 
-async def check_upcoming_crs():
-    """Check for CRs starting in the next 15 minutes and send reminders."""
-    logger.info("Checking for upcoming CRs requiring reminders")
-    
+async def check_approved_state_reminders():
+    """Flow 1: Approved state - 20min before start + at start if not In Progress."""
+    logger.info("Checking Approved state reminders")
     session = get_session()
     
     try:
-        # Calculate time window: now to 15 minutes from now
         now = datetime.utcnow()
-        reminder_window_start = now
-        reminder_window_end = now + timedelta(minutes=15)
         
-        # Query CRs with scheduled_start_date in the next 15 minutes
-        # Only notify for approved CRs that haven't started yet
-        upcoming_crs = (
+        # Part 1: 20 minutes before start
+        window_start = now
+        window_end = now + timedelta(minutes=20)
+        
+        approved_crs = (
             session.query(ChangeRequest)
             .filter(
                 ChangeRequest.scheduled_start_date.isnot(None),
-                ChangeRequest.scheduled_start_date >= reminder_window_start,
-                ChangeRequest.scheduled_start_date <= reminder_window_end,
-                ChangeRequest.state.in_(["Approved", "Scheduled"])
+                ChangeRequest.scheduled_start_date >= window_start,
+                ChangeRequest.scheduled_start_date <= window_end,
+                ChangeRequest.state == "Approved"
             )
             .all()
         )
         
-        if not upcoming_crs:
-            logger.debug("No upcoming CRs found in the next 15 minutes")
-            return
-        
-        logger.info(f"Found {len(upcoming_crs)} CRs starting soon")
-        
         sent_count = 0
-        skipped_count = 0
-        
-        for cr in upcoming_crs:
-            try:
-                # Check if reminder already sent
-                event_type = "reminder_15min_before_start"
-                existing_notification = (
-                    session.query(CRNotificationSent)
-                    .filter_by(
-                        cr_id=cr.cr_id,
-                        event_type=event_type,
-                        recipient_email=cr.created_by_email
-                    )
-                    .first()
-                )
-                
-                if existing_notification:
-                    logger.debug(f"Reminder already sent for {cr.cr_id}")
-                    skipped_count += 1
-                    continue
-                
-                # Send reminder via Power Automate
-                success = send_reminder_notification(
+        for cr in approved_crs:
+            event_type = "approved_20min_before_start"
+            if not _notification_exists(session, cr.cr_id, event_type, cr.created_by_email):
+                if send_power_automate_notification(
                     user_email=cr.created_by_email,
                     cr_id=cr.cr_id,
                     title=cr.title,
-                    scheduled_start=cr.scheduled_start_date,
-                    current_state=cr.state
-                )
-                
-                if success:
-                    # Log notification
-                    notification = CRNotificationSent(
-                        cr_id=cr.cr_id,
-                        event_type=event_type,
-                        recipient_email=cr.created_by_email,
-                    )
-                    session.add(notification)
-                    session.commit()
-                    
+                    notification_type=event_type,
+                    scheduled_time=cr.scheduled_start_date,
+                    current_state=cr.state,
+                    message="Your CR is starting in 20 minutes. Please transition to 'In Progress' when you begin."
+                ):
+                    _log_notification(session, cr.cr_id, event_type, cr.created_by_email)
                     sent_count += 1
-                    logger.info(f"Reminder sent for {cr.cr_id}", user=cr.created_by_email)
-                
-            except Exception as e:
-                logger.error(f"Failed to send reminder for {cr.cr_id}", error=str(e))
-                session.rollback()
         
-        logger.info(
-            "Reminder check complete",
-            sent=sent_count,
-            skipped=skipped_count,
-            total=len(upcoming_crs)
+        # Part 2: At start time if still Approved
+        overdue_crs = (
+            session.query(ChangeRequest)
+            .filter(
+                ChangeRequest.scheduled_start_date.isnot(None),
+                ChangeRequest.scheduled_start_date <= now,
+                ChangeRequest.scheduled_start_date >= now - timedelta(minutes=5),
+                ChangeRequest.state == "Approved"
+            )
+            .all()
         )
         
+        for cr in overdue_crs:
+            event_type = "approved_at_start_not_in_progress"
+            if not _notification_exists(session, cr.cr_id, event_type, cr.created_by_email):
+                if send_power_automate_notification(
+                    user_email=cr.created_by_email,
+                    cr_id=cr.cr_id,
+                    title=cr.title,
+                    notification_type=event_type,
+                    scheduled_time=cr.scheduled_start_date,
+                    current_state=cr.state,
+                    message="Your CR scheduled start time has arrived. Please update status to 'In Progress' immediately."
+                ):
+                    _log_notification(session, cr.cr_id, event_type, cr.created_by_email)
+                    sent_count += 1
+        
+        logger.info(f"Approved state reminders: {sent_count} sent")
+        
     except Exception as e:
-        logger.error("Reminder check failed", error=str(e))
+        logger.error("Approved state reminder check failed", error=str(e))
     finally:
         session.close()
 
 
-def send_reminder_notification(user_email, cr_id, title, scheduled_start, current_state):
+async def check_in_progress_reminders():
+    """Flow 2: In Progress state - 20min before end + follow-up at end."""
+    logger.info("Checking In Progress state reminders")
+    session = get_session()
+    
+    try:
+        now = datetime.utcnow()
+        
+        # Part 1: 20 minutes before end
+        window_start = now
+        window_end = now + timedelta(minutes=20)
+        
+        in_progress_crs = (
+            session.query(ChangeRequest)
+            .filter(
+                ChangeRequest.scheduled_end_date.isnot(None),
+                ChangeRequest.scheduled_end_date >= window_start,
+                ChangeRequest.scheduled_end_date <= window_end,
+                ChangeRequest.state == "In Progress"
+            )
+            .all()
+        )
+        
+        sent_count = 0
+        for cr in in_progress_crs:
+            event_type = "in_progress_20min_before_end"
+            if not _notification_exists(session, cr.cr_id, event_type, cr.created_by_email):
+                if send_power_automate_notification(
+                    user_email=cr.created_by_email,
+                    cr_id=cr.cr_id,
+                    title=cr.title,
+                    notification_type=event_type,
+                    scheduled_time=cr.scheduled_end_date,
+                    current_state=cr.state,
+                    message="Your CR is ending in 20 minutes. Please fill in results and update status."
+                ):
+                    _log_notification(session, cr.cr_id, event_type, cr.created_by_email)
+                    sent_count += 1
+        
+        # Part 2: At end time if results not filled
+        overdue_crs = (
+            session.query(ChangeRequest)
+            .filter(
+                ChangeRequest.scheduled_end_date.isnot(None),
+                ChangeRequest.scheduled_end_date <= now,
+                ChangeRequest.scheduled_end_date >= now - timedelta(minutes=5),
+                ChangeRequest.state == "In Progress"
+            )
+            .all()
+        )
+        
+        for cr in overdue_crs:
+            event_type = "in_progress_at_end_no_results"
+            if not _notification_exists(session, cr.cr_id, event_type, cr.created_by_email):
+                if send_power_automate_notification(
+                    user_email=cr.created_by_email,
+                    cr_id=cr.cr_id,
+                    title=cr.title,
+                    notification_type=event_type,
+                    scheduled_time=cr.scheduled_end_date,
+                    current_state=cr.state,
+                    message="Your CR scheduled end time has passed. Please provide completion status and results. Do you need an extension?",
+                    requires_response=True
+                ):
+                    _log_notification(session, cr.cr_id, event_type, cr.created_by_email)
+                    sent_count += 1
+        
+        logger.info(f"In Progress state reminders: {sent_count} sent")
+        
+    except Exception as e:
+        logger.error("In Progress reminder check failed", error=str(e))
+    finally:
+        session.close()
+
+
+async def check_awaiting_pir_reminders():
+    """Flow 3: Awaiting PIR state - periodic reminders to complete PIR."""
+    logger.info("Checking Awaiting PIR reminders")
+    session = get_session()
+    
+    try:
+        # Find all CRs in Awaiting PIR state
+        awaiting_pir_crs = (
+            session.query(ChangeRequest)
+            .filter(ChangeRequest.state == "Awaiting PIR")
+            .all()
+        )
+        
+        sent_count = 0
+        for cr in awaiting_pir_crs:
+            # Send daily reminder if not already sent today
+            event_type = f"awaiting_pir_reminder_{datetime.utcnow().strftime('%Y%m%d')}"
+            
+            if not _notification_exists(session, cr.cr_id, event_type, cr.assigned_to or cr.created_by_email):
+                recipient = cr.assigned_to or cr.created_by_email
+                if send_power_automate_notification(
+                    user_email=recipient,
+                    cr_id=cr.cr_id,
+                    title=cr.title,
+                    notification_type="awaiting_pir_reminder",
+                    current_state=cr.state,
+                    message="Formal reminder: Please complete and submit the Post-Implementation Review (PIR) for this CR."
+                ):
+                    _log_notification(session, cr.cr_id, event_type, recipient)
+                    sent_count += 1
+        
+        logger.info(f"Awaiting PIR reminders: {sent_count} sent")
+        
+    except Exception as e:
+        logger.error("Awaiting PIR reminder check failed", error=str(e))
+    finally:
+        session.close()
+
+
+def _notification_exists(session, cr_id, event_type, recipient_email):
+    """Check if notification already sent."""
+    return session.query(CRNotificationSent).filter_by(
+        cr_id=cr_id,
+        event_type=event_type,
+        recipient_email=recipient_email
+    ).first() is not None
+
+
+def _log_notification(session, cr_id, event_type, recipient_email):
+    """Log sent notification to database."""
+    notification = CRNotificationSent(
+        cr_id=cr_id,
+        event_type=event_type,
+        recipient_email=recipient_email,
+    )
+    session.add(notification)
+    session.commit()
+
+
+def send_power_automate_notification(
+    user_email,
+    cr_id,
+    title,
+    notification_type,
+    current_state,
+    message=None,
+    scheduled_time=None,
+    requires_response=False
+):
     """
-    Send 15-minute reminder via Power Automate flow.
+    Send notification via Power Automate flow.
     
     Args:
-        user_email: Email of CR creator
+        user_email: Recipient email
         cr_id: Change Request ID
         title: CR title
-        scheduled_start: Scheduled start datetime
+        notification_type: Type of notification (for flow routing)
         current_state: Current CR state
+        message: Custom message text
+        scheduled_time: Scheduled datetime (optional)
+        requires_response: Whether user response is needed
     
     Returns:
         bool: True if notification sent successfully
@@ -125,73 +253,101 @@ def send_reminder_notification(user_email, cr_id, title, scheduled_start, curren
     flow_url = Config.POWER_AUTOMATE_URL
     
     if not flow_url:
-        logger.warning("POWER_AUTOMATE_URL not configured, skipping reminder")
+        logger.warning("POWER_AUTOMATE_URL not configured, skipping notification")
         return False
     
     if not user_email:
-        logger.warning(f"No email for CR {cr_id}, cannot send reminder")
+        logger.warning(f"No email for CR {cr_id}, cannot send notification")
         return False
     
     # Generate CR link
     cr_link = Config.get_work_item_url(cr_id.replace("CR", ""))
     
-    # Format scheduled time
-    if isinstance(scheduled_start, datetime):
-        scheduled_time_str = scheduled_start.strftime("%Y-%m-%d %H:%M UTC")
-    else:
-        scheduled_time_str = str(scheduled_start)
+    # Format scheduled time if provided
+    scheduled_time_str = None
+    if scheduled_time and isinstance(scheduled_time, datetime):
+        scheduled_time_str = scheduled_time.strftime("%Y-%m-%d %H:%M UTC")
+    elif scheduled_time:
+        scheduled_time_str = str(scheduled_time)
     
     payload = {
         "user_email": user_email,
         "cr_id": cr_id,
         "title": title,
-        "scheduled_start": scheduled_time_str,
         "current_state": current_state,
         "cr_link": cr_link,
-        "notification_type": "reminder_15min"
+        "notification_type": notification_type,
+        "message": message,
+        "scheduled_time": scheduled_time_str,
+        "requires_response": requires_response
     }
     
     try:
         response = requests.post(flow_url, json=payload, timeout=10)
         
         if response.status_code == 202:  # Power Automate returns 202 Accepted
-            logger.info("Reminder sent via Power Automate", cr_id=cr_id, user=user_email)
+            logger.info("Notification sent via Power Automate", 
+                       cr_id=cr_id, 
+                       user=user_email, 
+                       type=notification_type)
             return True
         else:
             logger.error(
-                "Failed to send reminder",
+                "Failed to send notification",
                 cr_id=cr_id,
+                type=notification_type,
                 status=response.status_code,
                 response=response.text
             )
             return False
             
     except Exception as e:
-        logger.error("Error sending reminder", cr_id=cr_id, error=str(e))
+        logger.error("Error sending notification", 
+                    cr_id=cr_id, 
+                    type=notification_type, 
+                    error=str(e))
         return False
 
 
 def start_reminder_service(check_interval_minutes=5):
     """
-    Start background reminder service.
+    Start comprehensive reminder service with all three flows.
     
     Args:
-        check_interval_minutes: How often to check for upcoming CRs (default: 5)
+        check_interval_minutes: How often to check for reminders (default: 5)
     """
-    logger.info(f"Starting reminder service (check interval: {check_interval_minutes} minutes)")
+    logger.info(f"Starting comprehensive reminder service (check interval: {check_interval_minutes} minutes)")
     
     scheduler = AsyncIOScheduler()
     
-    # Add reminder check job
+    # Flow 1: Approved state reminders
     scheduler.add_job(
-        check_upcoming_crs,
+        check_approved_state_reminders,
         trigger=IntervalTrigger(minutes=check_interval_minutes),
-        id="check_cr_reminders",
-        name="Check CR 15-minute reminders",
+        id="check_approved_reminders",
+        name="Check Approved state reminders (20min before + at start)",
+        replace_existing=True,
+    )
+    
+    # Flow 2: In Progress state reminders
+    scheduler.add_job(
+        check_in_progress_reminders,
+        trigger=IntervalTrigger(minutes=check_interval_minutes),
+        id="check_in_progress_reminders",
+        name="Check In Progress state reminders (20min before end + follow-up)",
+        replace_existing=True,
+    )
+    
+    # Flow 3: Awaiting PIR reminders (check every hour)
+    scheduler.add_job(
+        check_awaiting_pir_reminders,
+        trigger=IntervalTrigger(hours=1),
+        id="check_awaiting_pir_reminders",
+        name="Check Awaiting PIR reminders (daily)",
         replace_existing=True,
     )
     
     scheduler.start()
-    logger.info("Reminder service started")
+    logger.info("Comprehensive reminder service started with 3 flows")
     
     return scheduler
