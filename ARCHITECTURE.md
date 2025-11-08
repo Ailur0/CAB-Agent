@@ -1,4 +1,4 @@
-# CAB Agent Architecture - Mixture of Experts (MoE)
+# CAB Agent Architecture - Mixture of Experts 
 
 ## Overview
 
